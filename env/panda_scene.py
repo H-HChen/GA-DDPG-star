@@ -274,8 +274,6 @@ class PandaYCBEnv():
 
         if not self.objects_loaded:
             self._objectUids = self.cache_objects()
-            if self._use_expert_plan:
-                self.setup_expert_scene()
 
         if scene_file is None or not os.path.exists(os.path.join(self.data_root_dir, scene_file + '.mat')):
             self._randomly_place_objects(self._get_random_object(self._numObjects))
@@ -736,12 +734,11 @@ class PandaYCBEnv():
         else:
             self._planner_setup = True
 
-    def expert_plan(self, step=-1, return_success=False):
+    def expert_plan(self, step=20, return_success=False):
         """
         Run OMG planner for the current scene
         """
         if not self._planner_setup:
-            self.reset(reset_free=True)
             self.setup_expert_scene()
         obj_names, obj_poses = self.get_env_info(self._cur_scene_file)
         object_lists = [name.split('/')[-1].strip() for name in obj_names]
@@ -764,22 +761,21 @@ class PandaYCBEnv():
                                              goal_pos=goal_grasp_pose,
                                              path_length=step-3,
                                              runTime=0.3)
+            planner_path = []
+            if isinstance(solver, ProblemDefinition):
+                path = solver.getSolutionPath().getStates()
+                for i in range(len(path)):
+                    waypoint = path[i]
+                    rot = waypoint.rotation()
+                    action = [waypoint.getX(), waypoint.getY(), waypoint.getZ(), rot.w, rot.x, rot.y, rot.z]
+                    planner_path.append(action)
+                planner_path += [pack_pose(goal_grasp_mat.dot(transZ(0.03 * times))).tolist() for times in range(1, 4)]
         else:
-            solver = self.planner_scene.plan(init_pos=current_ef_pose,
-                                             goal_pos=goal_grasp_pose,
-                                             runTime=0.3)
-        planer_path = []
-        if isinstance(solver, ProblemDefinition):
-            path = solver.getSolutionPath().getStates()
-            for i in range(len(path)):
-                waypoint = path[i]
-                rot = waypoint.rotation()
-                action = [waypoint.getX(), waypoint.getY(), waypoint.getZ(), rot.w, rot.x, rot.y, rot.z]
-                planer_path.append(action)
-            planer_path += [pack_pose(goal_grasp_mat.dot(transZ(0.03 * times))).tolist() for times in range(1, 4)]
+            planner_path = [pack_pose(goal_grasp_mat.dot(transZ(0.03 * times))).tolist() for times in range(1, 4)]
+
         if not return_success:
-            return planer_path, np.zeros(len(path))
-        return planer_path, np.zeros(len(path)), len(path)
+            return planner_path, np.zeros(len(planner_path))
+        return planner_path, np.zeros(len(planner_path)), len(planner_path)
 
     def _randomly_place_objects(self, urdfList, poses=None):
         """

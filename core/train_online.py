@@ -165,30 +165,44 @@ class ActorWrapper(object):
         self.env.reset(save=False, data_root_dir=cfg.DATA_ROOT_DIR,
                        cam_random=0, enforce_face_target=True)
 
-    def init_episode(self):
+    def init_episode(self, simple_ratio=0.5):
         """
         Initialize an episode by sampling objects and init states until valid
         """
         check_scene_flag = False
+        simple_flag = False
         data_root = cfg.DATA_ROOT_DIR
         scenes = None
         state = self.env.reset(save=False, scene_file=scenes,
                                data_root_dir=data_root, cam_random=0, reset_free=True,
                                enforce_face_target=True)
+        self.env.setup_expert_scene()
         if VISDOM and state is not None:
             self.vis.image(state[0][1][:3].transpose([0, 2, 1]), win=self.win_id)
         init_joints = None
+        if not self.env._planner_setup:
+            return state, False, False
         for i in range(ENV_RESET_TRIALS):
-            init_joints = rand_sample_joint(self.env, init_joints)
+            if (np.random.uniform() < simple_ratio):
+                init_pregrasp = self.env._get_nearest_goal_pose(mat=True, world=True).dot(transZ(-0.09))
+                init_pregrasp = pack_pose(init_pregrasp)
+                trans = init_pregrasp[:3]
+                quat = ros_quat(init_pregrasp[3:])
+                init_joints = self.env._panda.solveInverseKinematics(trans, quat)
+                init_joints[6] = 0.0
+                init_joints = init_joints[:7].copy()
+                simple_flag = True
+            else:
+                init_joints = rand_sample_joint(self.env, init_joints)
             if init_joints is not None:
                 self.env.reset_joint(init_joints)
                 start_rotation = self.env._get_ef_pose(mat=True)[:3, :3]
                 if check_scene(self.env, state, start_rotation):
                     check_scene_flag = True
                     break
-        return state, check_scene_flag
+        return state, check_scene_flag, simple_flag
 
-    def get_flags(self, explore, expert_traj_length, step):
+    def get_flags(self, explore, expert_traj_length, step, simple_flag):
         """
         get different booleans for the current step
         """
@@ -197,15 +211,17 @@ class ActorWrapper(object):
         apply_dagger = CONFIG.dagger and \
             (step > DAGGER_MIN_STEP) and \
             (step < min(DAGGER_MAX_STEP, expert_traj_length-8)) and \
-            (np.random.uniform() < DAGGER_RATIO) and explore
+            (np.random.uniform() < DAGGER_RATIO) and explore and \
+            (not simple_flag)
         apply_dart = CONFIG.dart and \
             (step > CONFIG.DART_MIN_STEP) and \
             (step < CONFIG.DART_MAX_STEP) and \
-            (np.random.uniform() < CONFIG.DART_RATIO) and not explore
+            (np.random.uniform() < CONFIG.DART_RATIO) and not explore and \
+            (not simple_flag)
         return expert_flag, perturb_flags, apply_dagger, apply_dart
 
     def rollout(self, num_episodes=1, explore=False, dagger=False,
-                test=False,  noise_scale=1.):
+                test=False,  noise_scale=1., simple_ratio=0.5):
         """
         policy rollout and save data
         """
@@ -213,26 +229,26 @@ class ActorWrapper(object):
 
             # init scene
             try:
-                state, check_scene_flag = self.init_episode()
+                state, check_scene_flag, simple_flag = self.init_episode(simple_ratio=simple_ratio)
             except:
                 print(f"{bcolors.FAIL}Init Episode Error.{bcolors.RESET}")
                 check_scene_flag = False
 
-            if not check_scene_flag:
+            if not check_scene_flag or not self.env._planner_setup:
                 return [0]
 
             step, reward = 0., 0.
             done = False
             cur_episode = []
-            self.env.setup_expert_scene()
-            expert_plan_world, _ = self.env.expert_plan()
+            path_length = -1 if simple_flag else MAX_STEP
+            expert_plan_world, _ = self.env.expert_plan(step=path_length)
             expert_plan_world = np.array(expert_plan_world)
             if not len(expert_plan_world) or state is None:
                 return [0]
             expert_traj_length = len(expert_plan_world)
 
             init_info = self.env._get_init_info()
-            expert_initial_step = np.random.randint(EXPERT_INIT_MIN_STEP, EXPERT_INIT_MAX_STEP)
+            expert_initial_step = np.random.randint(EXPERT_INIT_MIN_STEP, EXPERT_INIT_MAX_STEP) if not simple_flag else 0
             expert_initial = CONFIG.expert_initial_state and not test and not BC
             goal_involved = CONFIG.train_goal_feature or CONFIG.policy_aux or CONFIG.critic_aux
             aux_pred = np.zeros(0)
@@ -241,7 +257,7 @@ class ActorWrapper(object):
             while not done:
 
                 # plan
-                expert_flag, perturb_flags, apply_dagger, apply_dart = self.get_flags(explore, expert_traj_length, step)
+                expert_flag, perturb_flags, apply_dagger, apply_dart = self.get_flags(explore, expert_traj_length, step, simple_flag)
                 if apply_dart:
                     perturb_flags = 1.
                     self.env.random_perturb()  # inject noise
@@ -552,13 +568,14 @@ if __name__ == "__main__":
         incr_agent_update_step, agent_update_step = ray.get([learner_id.get_agent_incr_update_step.remote(), learner_id.get_agent_update_step.remote()])
         milestone_idx = int((incr_agent_update_step > np.array(CONFIG.mix_milestones)).sum())
         explore_ratio = min(get_valid_index(CONFIG.explore_ratio_list, milestone_idx), CONFIG.explore_cap)
+        simple_ratio = get_valid_index(CONFIG.simple_ratio_list, milestone_idx)
         explore = (np.random.uniform() < explore_ratio)
         noise_scale = CONFIG.action_noise * get_valid_index(CONFIG.noise_ratio_list, milestone_idx)
 
         ######################### Rollout and Train
         test_rollout = np.random.uniform() < 0.1
         rollouts = []
-        rollouts.extend([actor.rollout.remote(MERGE_EVERY, explore, False, test_rollout, noise_scale) for i, actor in enumerate(actors)])
+        rollouts.extend([actor.rollout.remote(MERGE_EVERY, explore, False, test_rollout, noise_scale, simple_ratio) for i, actor in enumerate(actors)])
         rollouts.extend([trainer.train_iter.remote()])
         rollouts.extend([rollout_agent_id_.load_weight.remote(weights) for rollout_agent_id_ in rollout_agent_id])
         rollouts.extend([learner_id.get_weight.remote()])

@@ -87,6 +87,7 @@ __C.RL_TRAIN.policy_milestones = [20000, 40000, 60000, 80000]
 __C.RL_TRAIN.mix_milestones = [4000, 8000, 20000, 40000, 60000, 80000, 100000, 140000, 180000]
 __C.RL_TRAIN.mix_policy_ratio_list = [0.1, 0.2]
 __C.RL_TRAIN.mix_value_ratio_list = [1.]
+__C.RL_TRAIN.simple_ratio_list = [0.5]
 __C.RL_TRAIN.policy_extra_latent = -1
 __C.RL_TRAIN.critic_extra_latent = -1
 __C.RL_TRAIN.save_epoch = [5000, 20000, 40000, 80000, 140000, 180000, 200000]
