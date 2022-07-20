@@ -147,37 +147,6 @@ class ResNetFeature(nn.Module):
         return sample_grasps
 
 
-class GoalFeature(nn.Module):
-    def __init__(
-        self,
-        input_dim=3,
-        pointnet_radius=0.02,
-        pointnet_nclusters=128,
-        model_scale=1,
-        action_concat=False
-    ):
-        super(GoalFeature, self).__init__()
-        self.num_grasp_samples = 1
-        self.encoder = base_network(
-            pointnet_radius, pointnet_nclusters, model_scale, 3
-        )
-        self.q = nn.Linear(model_scale * 512, 4)
-        self.t = nn.Linear(model_scale * 512, 3)
-        self.confidence = nn.Linear(model_scale * 512, 1)
-
-    def encode(self, xyz, xyz_features):
-        for module in self.encoder[0]:
-            xyz, xyz_features = module(xyz, xyz_features)
-        return self.encoder[1](xyz_features.squeeze(-1))
-
-    def forward(self, pc, grasp=None, goal_head=False):
-        pc = pc.cuda()
-        z = self.encode(pc[..., :3], pc.transpose(1, -1).contiguous())
-        qt = torch.cat((F.normalize(self.q(z), p=2, dim=-1), self.t(z)), -1)
-        confidence = self.confidence(z)
-        return qt, torch.sigmoid(confidence).squeeze()
-
-
 class PointNetFeature(nn.Module):
     def __init__(
         self,

@@ -92,7 +92,6 @@ class Agent(object):
         repeat=False,
     ):
 
-        self.goal_feature_extractor.eval()
         self.state_feature_extractor.eval()
         self.policy.eval()
 
@@ -149,10 +148,6 @@ class Agent(object):
         Load networks
         """
         state_feature_extractor = net_dict["state_feature_extractor"]
-        goal_feature_extractor = net_dict["goal_feature_extractor"]
-        self.goal_feature_extractor = goal_feature_extractor["net"]
-        self.goal_feature_extractor_opt = goal_feature_extractor["opt"]
-        self.goal_feature_extractor_sch = goal_feature_extractor["scheduler"]
         self.state_feature_extractor = state_feature_extractor["net"]
         self.state_feature_extractor_optim = state_feature_extractor["opt"]
         self.state_feature_extractor_scheduler = state_feature_extractor["scheduler"]
@@ -196,7 +191,6 @@ class Agent(object):
         loss.backward()  #
 
         self.policy_optim.step()
-        self.goal_feature_extractor_opt.step()
         if self.train_feature:
             self.state_feat_encoder_optim.step()
         if hasattr(self, "policy_target"):

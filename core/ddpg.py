@@ -22,14 +22,12 @@ class DDPG(Agent):
     def load_weight(self, weights):
         self.policy.load_state_dict(weights[0])
         self.critic.load_state_dict(weights[1])
-        self.goal_feature_extractor.load_state_dict(weights[2])
-        self.state_feature_extractor.load_state_dict(weights[3])
+        self.state_feature_extractor.load_state_dict(weights[2])
 
     def get_weight(self):
         return [
             self.policy.state_dict(),
             self.critic.state_dict(),
-            self.goal_feature_extractor.state_dict(),
             self.state_feature_extractor.state_dict(),
         ]
 
