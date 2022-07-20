@@ -3,16 +3,15 @@ RL_SAVE_DATA_NAME: 'data_5w.npz'
 RL_TRAIN:
   RL: True
   dagger: True
-  batch_size: 64
-  max_epoch: 160000 
+  batch_size: 72
+  max_epoch: 640000
   updates_per_step: 20
   num_remotes: 7
-  explore_ratio_list: [0.2, 0.3, 0.5]
-  mix_milestones: [4000, 8000, 20000]
+  explore_ratio_list: [0.5]
   bc_loss_list: [0.1]
-  simple_ratio_list: [0.5, 0.4, 0.3]
+  simple_ratio_list: [0.2]
   onpolicy: True
   online_buffer_ratio: 1.0
   use_expert_plan: True
-  mix_policy_ratio_list: [0.05]
+  mix_policy_ratio_list: [0.1]
   use_acronym: True

@@ -75,11 +75,11 @@ class DDPG(Agent):
             next_action_mean, _, _, _ = self.policy_target.sample(next_state_batch)
             idx = int((self.update_step > np.array(self.mix_milestones)).sum())
             noise_scale = self.action_noise * get_valid_index(self.noise_ratio_list, idx)
-            noise_delta = get_noise_delta(next_action_mean, noise_scale, self.noise_type)
+            noise_delta = get_noise_delta(next_action_mean[:, :6], noise_scale, self.noise_type)
             noise_delta[:, :3] = torch.clamp(noise_delta[:, :3], -0.01, 0.01)
-            next_action_mean = next_action_mean + noise_delta
-            next_target_state_batch  = self.extract_feature(self.next_image_state_batch, self.next_point_state_batch, next_action_mean,
-                                                            self.next_goal_batch, next_time_batch, value=True)
+            next_action_mean[:, :6] = next_action_mean[:, :6] + noise_delta
+            next_target_state_batch = self.extract_feature(self.next_image_state_batch, self.next_point_state_batch, next_action_mean,
+                                                           self.next_goal_batch, next_time_batch, value=True)
 
             min_qf_next_target = self.state_action_value(next_target_state_batch, next_action_mean, target=True)
             next_q_value = reward_batch + (1 - mask_batch) * self.gamma * min_qf_next_target
@@ -110,9 +110,10 @@ class DDPG(Agent):
         idx = int((self.update_step > np.array(self.mix_milestones)).sum())
         mix_policy_ratio = get_valid_index(self.mix_policy_ratio_list, idx)
         mix_policy_ratio = min(mix_policy_ratio, self.ddpg_coefficients[4])
-        mix_value_ratio  = get_valid_index(self.mix_value_ratio_list, idx)
-        mix_value_ratio  = min(mix_value_ratio, self.ddpg_coefficients[3])
-        return mix_value_ratio, mix_policy_ratio
+        mix_value_ratio = get_valid_index(self.mix_value_ratio_list, idx)
+        mix_value_ratio = min(mix_value_ratio, self.ddpg_coefficients[3])
+        bc_loss_ratio = get_valid_index(self.bc_loss_list, idx)
+        return mix_value_ratio, mix_policy_ratio, bc_loss_ratio
 
     def compute_critic_loss(self, value_feat):
         """
@@ -140,11 +141,10 @@ class DDPG(Agent):
         self.state_feat_val_encoder_optim.step()
         self.critic_optim.step()
 
-
     def update_parameters(self, batch_data, updates, k, test=False):
         """ update agent parameters """
 
-        self.mix_value_ratio, self.mix_policy_ratio = self.get_mix_ratio(self.update_step)
+        self.mix_value_ratio, self.mix_policy_ratio, self.bc_loss_ratio = self.get_mix_ratio(self.update_step)
         self.set_mode(test)
         self.prepare_data(batch_data)
 

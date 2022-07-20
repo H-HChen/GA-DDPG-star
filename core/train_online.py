@@ -68,7 +68,7 @@ def sample_experiment_objects():
     index_file = os.path.join(cfg.EXPERIMENT_OBJ_INDEX_DIR, index_file + '.json')
 
     file_index = json.load(open(index_file))[CONFIG.index_split]
-    file_dir = [f[:-5].split('.')[0][:-2] if 'json' in f else f for f in file_index]
+    file_dir = [f[:-5] if 'json' in f else f for f in file_index]
     sample_index = np.random.choice(range(len(file_dir)), min(LOAD_OBJ_NUM, len(file_dir)), replace=False).astype(np.int)
     file_dir = [file_dir[idx] for idx in sample_index]
 
@@ -264,10 +264,11 @@ class ActorWrapper(object):
 
                 if apply_dagger:
                     expert_flag = 2.
+                    expert_termination = -1/6
 
                 if apply_dagger or apply_dart:  # replan
                     rest_expert_plan, _ = self.env.expert_plan(step=int(MAX_STEP-step-1))
-                    expert_plan_world = np.vstack([expert_plan_world[:int(step)], rest_expert_plan])
+                    expert_plan_world = np.vstack([expert_plan_world[:int(step)], rest_expert_plan[1:]])
                     expert_traj_length = len(expert_plan_world)
 
                 goal_pose = self.env._get_nearest_goal_pose()
@@ -288,16 +289,17 @@ class ActorWrapper(object):
                     next_pos = np.array([*next_pos[:3, 3], *mat2euler(next_pos[:3, :3])])
                     expert_action = next_pos
 
+                expert_termination = 1/6 if (not explore and step == expert_traj_length) else -1/6
                 # expert
                 if not explore or (expert_initial and step < expert_initial_step):
                     grasp = step == len(expert_plan) - 1
                     action = expert_action
                     log_probs = np.zeros(6)
-
+                    termination = expert_termination
                 # agent
                 else:
                     remain_timestep = max(expert_traj_length-step, 1)
-                    action_mean, log_probs, action_sample, aux_pred = \
+                    action_mean, log_probs, action_sample, aux_pred, termination = \
                         ray.get(self.learner_id.select_action.remote(state,
                                 goal_state=goal_pose, remain_timestep=remain_timestep,
                                 gt_goal_rollout=not CONFIG.self_supervision and not test))
@@ -306,22 +308,29 @@ class ActorWrapper(object):
                     action = action_mean
                     grasp = 0
 
-                # step
-                next_state, reward, done, _ = self.env.step(action)
-                if VISDOM:
-                    img = draw_grasp_img(next_state[0][1][:3].transpose([2, 1, 0]), unpack_pose_rot_first(goal_pose),
-                                         self.K,  self.offset_pose, (0, 1., 0))
-                    if goal_involved and len(aux_pred) == 7:
-                        img = draw_grasp_img(next_state[0][1][:3].transpose([2, 1, 0]), unpack_pose_rot_first(aux_pred),
-                                             self.K,  self.offset_pose, (0, 1., 0))
-                    self.vis.image(img.transpose([2, 0, 1]), win=self.win_id)
-
-                if (not explore and step == expert_traj_length) or step == EXTEND_MAX_STEP or (done):
+                if (not explore and step == expert_traj_length) or (step == EXTEND_MAX_STEP) or (explore and termination > 0.):
                     reward, res_obs = self.env.retract(record=True)
                     if VISDOM:
                         for r in res_obs:
                             self.vis.image(r[0][1][:3].transpose([0, 2, 1]), win=self.win_id)
                     done = True
+                    next_state = state
+                else:
+                    # step
+                    next_state, reward, _, _ = self.env.step(action, repeat=180)
+
+                    if VISDOM:
+                        img = draw_grasp_img(next_state[0][1][:3].transpose([2, 1, 0]), unpack_pose_rot_first(goal_pose),
+                                            self.K,  self.offset_pose, (0, 1., 0))
+                        if goal_involved and len(aux_pred) == 7:
+                            img = draw_grasp_img(next_state[0][1][:3].transpose([2, 1, 0]), unpack_pose_rot_first(aux_pred),
+                                                self.K,  self.offset_pose, (0, 1., 0))
+                        self.vis.image(img.transpose([2, 0, 1]), win=self.win_id)
+
+                action = np.hstack([action, termination])
+                expert_action = np.hstack([expert_action, expert_termination])
+                if termination > -1/6:
+                    print(termination, step)
 
                 step_dict = {
                                 'point_state': state[0][0],
@@ -451,7 +460,7 @@ def choose_setup():
     agent_wrapper = AgentWrapperGPU1
     actor_wrapper = ActorWrapper008
     GPUs = GPUtil.getGPUs()
-    max_memory = 10
+    max_memory = 25
 
     if len(GPUs) == 1:  # 4 GPU
         NUM_REMOTES //= 2
@@ -523,7 +532,7 @@ if __name__ == "__main__":
     MERGE_EVERY = 1
     ENV_RESET_TRIALS = CONFIG.ENV_RESET_TRIALS
     LOAD_OBJ_NUM = CONFIG.load_obj_num
-    EXTEND_MAX_STEP = MAX_STEP + 6
+    EXTEND_MAX_STEP = MAX_STEP + 20
 
     DAGGER_MIN_STEP = CONFIG.DAGGER_MIN_STEP
     DAGGER_MAX_STEP = CONFIG.DAGGER_MAX_STEP

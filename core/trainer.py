@@ -121,8 +121,8 @@ class AgentWrapper(object):
     def select_action(self, state, actions=None, goal_state=None, remain_timestep=1,
                       gt_goal_rollout=True, curr_joint=None, gt_traj=None):
         """ on policy action """
-        action, traj, extra_pred, aux_pred = self.agent.select_action(state, actions=actions, goal_state=goal_state)
-        return action, traj, extra_pred, aux_pred
+        action, traj, extra_pred, aux_pred, termination = self.agent.select_action(state, actions=actions, goal_state=goal_state)
+        return action, traj, extra_pred, aux_pred, termination
 
     def update_parameter(self, batch_data, updates, i):
         return self.agent.update_parameters(batch_data,  updates, i)
@@ -281,7 +281,7 @@ class Trainer(object):
         train_iter_time = (time.time() - start_time)
         self.writer.add_scalar('info/train_time', train_iter_time, self.updates)
         print_and_write(self.file_handle, '==================================== Learn ====================================')
-        print_and_write(self.file_handle, 'model: {}  updates: {} lr: {:.5f}  network time: {:.3f} sample time: {:.3f} buffer: {}/{} {}/{}'.format(
+        print_and_write(self.file_handle, 'model: {}  updates: {} lr: {:.6f}  network time: {:.3f} sample time: {:.3f} buffer: {}/{} {}/{}'.format(
                         self.config.output_time, self.updates, infos['policy_lr'], train_iter_time, sample_time * self.config.updates_per_step,
                         buffer_curr_idx, buffer_upper_idx, online_buffer_curr_idx, online_buffer_upper_idx))
 

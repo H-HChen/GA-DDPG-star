@@ -359,7 +359,7 @@ class BaseMemory(Dataset):
             state_size = (1,)  # dummy
         else:
             state_size = (5, 112, 112)
-        action_size = (6,)
+        action_size = (7,)
         pose_size = (64,)
 
         self.image_state = np.zeros((self.buffer_size,) + state_size, dtype=np.uint16)

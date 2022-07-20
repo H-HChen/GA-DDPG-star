@@ -114,6 +114,8 @@ class Agent(object):
 
         actions = self.policy.sample(feature)
         action = actions[0].detach().cpu().numpy()[0]
+        termination = action[6].copy()
+        action = action[:6].copy()
         extra_pred = actions[1].detach().cpu().numpy()[0][0]
         action_sample = actions[2].detach().cpu().numpy()[0]
         aux_pred = actions[3]
@@ -121,7 +123,7 @@ class Agent(object):
             aux_pred = aux_pred.detach().cpu().numpy()[0]
         else:
             aux_pred = goal_state.detach().cpu().numpy()[0]
-        return action, extra_pred, action_sample, aux_pred
+        return action, extra_pred, action_sample, aux_pred, termination
 
     def compute_loss(self):
         """
@@ -132,7 +134,9 @@ class Agent(object):
             self.policy_grasp_aux_loss = goal_pred_loss(self.aux_pred[self.goal_reward_mask, :7],
                                                         self.target_grasp_batch[self.goal_reward_mask, :7])
 
-        self.bc_loss = pose_bc_loss(self.pi[self.expert_mask], self.expert_action_batch[self.expert_mask])
+        self.bc_loss = pose_bc_loss(self.pi[self.expert_reward_mask], self.expert_action_batch[self.expert_reward_mask])
+        self.bc_loss += F.smooth_l1_loss(self.pi[self.expert_reward_mask][: :, 6],
+                                         self.expert_action_batch[self.expert_reward_mask][: :, 6]) * self.bc_loss_ratio
         if self.has_critic:
             self.bc_loss = self.bc_loss * (1 - self.mix_policy_ratio)
         return sum([getattr(self, name) for name in self.loss_info if name.endswith('loss') and not name.startswith('critic')])

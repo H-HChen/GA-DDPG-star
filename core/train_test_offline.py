@@ -227,7 +227,7 @@ def test(run_iter=0):
             # agent action
             remain_timestep = max(max_steps-episode_steps, 1)
             vis = False
-            action, _, _, aux_pred = agent.select_action(state, vis=False, remain_timestep=remain_timestep )
+            action, _, _, aux_pred, termination = agent.select_action(state, vis=False, remain_timestep=remain_timestep )
 
             # visualize
             vis_img = get_info(state, 'img', cfg.RL_IMG_SIZE)
@@ -236,18 +236,18 @@ def test(run_iter=0):
                 best_grasp = pred_grasp
                 vis_img  = draw_grasp_img(vis_img, best_grasp.dot(rotZ(np.pi/2)), cam_intr, camera_hand_offset_pose)   #
 
-            # step
-            next_state, reward, done, env_info = env.step(action, delta=True, vis=False)
-            traj.append(vis_img)
-            print('step: {} action: {:.3f} rew: {:.2f} '.format(
-            episode_steps, np.abs(action[:3]).sum(), reward ))
-
             # retract
-            if (episode_steps == TOTAL_MAX_STEP or done):
+            if (episode_steps == TOTAL_MAX_STEP or termination > 0.1):
                 reward, res_obs = env.retract(record=True)
                 res_obs = [get_info(r, 'img', cfg.RL_IMG_SIZE) for r in res_obs]
                 done = True
                 traj.extend(res_obs)
+            else:
+            # step
+                next_state, reward, _, env_info = env.step(action, delta=True, vis=False, repeat=180)
+                traj.append(vis_img)
+                print('step: {} action: {:.3f} rew: {:.2f} '.format(
+                    episode_steps, np.abs(action[:3]).sum(), reward))
 
             state = next_state
             episode_reward += reward

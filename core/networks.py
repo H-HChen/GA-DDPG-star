@@ -154,7 +154,7 @@ class PointNetFeature(nn.Module):
         pointnet_nclusters=32,
         pointnet_radius=0.02,
         model_scale=1,
-        extra_latent=0,
+        extra_latent=1,
         split_feature=False,
         policy_extra_latent=-1,
         critic_extra_latent=-1,
@@ -172,7 +172,7 @@ class PointNetFeature(nn.Module):
         input_dim = 3 + critic_extra_latent if critic_extra_latent > 0 else input_dim
         self.critic_input_dim = input_dim
         if action_concat:
-            self.critic_input_dim = 10
+            self.critic_input_dim = 11
         self.value_encoder = self.create_encoder(
             model_scale, pointnet_radius, pointnet_nclusters, self.critic_input_dim
         )
@@ -192,7 +192,6 @@ class PointNetFeature(nn.Module):
         pc,
         grasp=None,
         concat_option="channel_wise",
-        rotz=True,
         feature_2=False,
         train=True,
     ):
@@ -200,7 +199,8 @@ class PointNetFeature(nn.Module):
         input_features = pc
         input_features_vis = input_features
         if input_features.shape[-1] != 1024:  # hand points included
-            input_features = input_features[..., 6:]
+            # input_features = input_features[..., 6:]
+            input_features = input_features[..., :-6]
 
         input_features = (
             input_features[:, : self.critic_input_dim].contiguous()
@@ -231,14 +231,14 @@ class QNetwork(nn.Module):
         super(QNetwork, self).__init__()
 
         # Q1 architecture
-        self.linear1 = nn.Linear(num_inputs + num_actions, hidden_dim)
-        self.linear2 = nn.Linear(hidden_dim, hidden_dim)
+        self.linear1 = nn.Linear(num_inputs + num_actions, int(hidden_dim*2))
+        self.linear2 = nn.Linear(int(hidden_dim*2), hidden_dim)
         self.linear3 = nn.Linear(hidden_dim, 1)
         self.extra_pred_dim = extra_pred_dim
 
         # Q2 architecture
-        self.linear4 = nn.Linear(num_inputs + num_actions, hidden_dim)
-        self.linear5 = nn.Linear(hidden_dim, hidden_dim)
+        self.linear4 = nn.Linear(num_inputs + num_actions, int(hidden_dim*2))
+        self.linear5 = nn.Linear(int(hidden_dim*2), hidden_dim)
         self.linear6 = nn.Linear(hidden_dim, 1)
         if self.extra_pred_dim > 0:
             self.linear7 = nn.Linear(num_inputs, hidden_dim)
@@ -281,12 +281,12 @@ class GaussianPolicy(nn.Module):
     ):
         super(GaussianPolicy, self).__init__()
 
-        self.linear1 = nn.Linear(num_inputs, hidden_dim)
-        self.linear2 = nn.Linear(hidden_dim, hidden_dim)
+        self.linear1 = nn.Linear(num_inputs, int(hidden_dim*2))
+        self.linear2 = nn.Linear(int(hidden_dim*2), hidden_dim)
         self.uncertainty = uncertainty
 
         self.extra_pred_dim = extra_pred_dim
-        self.mean = nn.Linear(hidden_dim, num_actions)
+        self.mean = nn.Linear(hidden_dim, num_actions + 1)
         self.extra_pred = nn.Linear(hidden_dim, self.extra_pred_dim)
         self.log_std_linear = nn.Linear(hidden_dim, num_actions)
 
@@ -316,13 +316,14 @@ class GaussianPolicy(nn.Module):
             )
         log_std = self.log_std_linear(x)
         log_std = torch.clamp(log_std, min=LOG_SIG_MIN, max=LOG_SIG_MAX)
+        mean[:, 6] = torch.tanh(mean[:, 6]) * (1/6)
 
         return mean, log_std, extra_pred
 
     def sample(self, state):
         mean, log_std, extra_pred = self.forward(state)
         std = log_std.exp()
-        normal = Normal(mean, std)
+        normal = Normal(mean[:, :6], std)
         x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
         if self.action_space is not None:
             y_t = torch.tanh(x_t)
@@ -336,7 +337,7 @@ class GaussianPolicy(nn.Module):
         log_prob -= torch.log(self.action_scale * (1 - y_t.pow(2)) + epsilon)
         log_prob = log_prob.sum(1, keepdim=True)
         if self.action_space is not None:
-            mean = torch.tanh(mean) * self.action_scale + self.action_bias
+            mean[:, :6] = torch.tanh(mean[:, :6]) * self.action_scale + self.action_bias
         return mean, log_prob, action, extra_pred
 
     def to(self, device):
