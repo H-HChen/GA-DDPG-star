@@ -237,7 +237,7 @@ def test(run_iter=0):
                 vis_img  = draw_grasp_img(vis_img, best_grasp.dot(rotZ(np.pi/2)), cam_intr, camera_hand_offset_pose)   #
 
             # retract
-            if (episode_steps == TOTAL_MAX_STEP or termination > 0.1):
+            if (episode_steps == TOTAL_MAX_STEP or termination > 0.):
                 reward, res_obs = env.retract(record=True)
                 res_obs = [get_info(r, 'img', cfg.RL_IMG_SIZE) for r in res_obs]
                 done = True

@@ -36,8 +36,8 @@ import psutil
 import GPUtil
 import open3d as o3d
 
-hand_finger_point = np.array([ [ 0.,  0.,  0.   , -0.   ,  0.   , -0.   ],
-                               [ 0.,  0.,  0.045, -0.045,  0.045, -0.045],
+hand_finger_point = np.array([ [ 0.,  0.,  0.045, -0.045,  0.045, -0.045],
+                               [ 0.,  0.,  0.   , -0.   ,  0.   , -0.   ],
                                [ 0.,  0.,  0.115,  0.145,  0.115,  0.145]])
 
 
